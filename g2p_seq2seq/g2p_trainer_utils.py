@@ -101,6 +101,7 @@ def create_experiment(run_config,
                       eval_early_stopping_metric=None,
                       eval_early_stopping_metric_delta=None,
                       eval_early_stopping_metric_minimize=True,
+                      warm_start_from=None,
                       autotune=False,
                       use_tpu=False):
   """Create Experiment."""
@@ -110,6 +111,7 @@ def create_experiment(run_config,
   hparams.add_hparam("train_steps", train_steps)
   hparams.add_hparam("eval_steps", eval_steps)
   hparams.add_hparam("schedule", schedule)
+  hparams.add_hparam("warm_start_from", warm_start_from)
   add_problem_hparams(hparams, problem_instance)
 
   # Estimator
@@ -168,8 +170,11 @@ def create_experiment(run_config,
       validation_monitor_kwargs=validation_monitor_kwargs,
       use_early_stopping=use_early_stopping,
       early_stopping_kwargs=early_stopping_kwargs)
-  train_hooks += t2t_model.T2TModel.get_train_hooks(model_name)
-  eval_hooks += t2t_model.T2TModel.get_eval_hooks(model_name)
+
+  hook_context = trainer_lib.HookContext(estimator=estimator, problem=problem, hparams=hparams)
+
+  train_hooks += t2t_model.T2TModel.get_train_hooks(model_name, hook_context)
+  eval_hooks += t2t_model.T2TModel.get_eval_hooks(model_name, hook_context)
 
   train_hooks = tf.contrib.learn.monitors.replace_monitors_with_hooks(
       train_hooks, estimator)
@@ -202,7 +207,7 @@ def create_experiment(run_config,
 
 def create_run_config(hp, params):
   """Create RunConfig"""
-  return trainer_lib.create_run_config(
+  return trainer_lib.create_run_config("my_model",
       master=params.master,
       model_dir=params.model_dir,
       iterations_per_loop=params.iterations_per_loop,
@@ -214,7 +219,6 @@ def create_run_config(hp, params):
       keep_checkpoint_every_n_hours=params.keep_checkpoint_every_n_hours,
       num_gpus=params.worker_gpu,
       gpu_order=params.gpu_order,
-      shard_to_cpu=params.locally_shard_to_cpu,
       num_async_replicas=params.worker_replicas,
       enable_graph_rewriter=params.experimental_optimize_placement,
       gpu_mem_fraction=params.worker_gpu_memory_fraction,
